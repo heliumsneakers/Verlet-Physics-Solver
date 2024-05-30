@@ -38,8 +38,8 @@ elseif (UNIX)
     target_link_libraries(Verlet PRIVATE ${RAYLIB_DIR}/libraylib.a m GL glfw dl pthread)
 elseif (WIN32)
     # Link libraries for Windows
-    target_link_libraries(Verlet PRIVATE ${RAYLIB_DIR}/libraylib.a opengl32 gdi32 winmm shell32)
+    set(RAYLIB_LIB ${RAYLIB_DIR}/Debug/raylib.lib) # Adjust path as necessary
+    target_link_libraries(Verlet PRIVATE ${RAYLIB_LIB} opengl32 gdi32 winmm shell32)
 endif()
-
 # Add raylib definitions
 target_compile_definitions(Verlet PRIVATE -DUSE_RAYLIB)
