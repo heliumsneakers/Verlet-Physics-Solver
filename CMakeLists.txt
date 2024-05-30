@@ -17,7 +17,7 @@ include_directories(${CUSTOM_SRCS})
 
 # Your source files
 set(SOURCES
-    verlet_integration.cpp
+    ${CUSTOM_SRCS}/verlet_integration.cpp
     ${CUSTOM_SRCS}/physics.cpp
     ${IMGUI_DIR}/imgui.cpp
     ${IMGUI_DIR}/imgui_draw.cpp
