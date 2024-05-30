@@ -11,7 +11,7 @@
 
     ```sh
     git clone https://github.com/heliumsneakers/Verlet-Physics-Solver.git
-    cd *repo location*
+    cd Verlet-Physics-Solver
     ```
 
 2. Initialize and update submodules:
