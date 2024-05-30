@@ -1,4 +1,4 @@
-# Verlet Physics Solver
+# Verlet Particles
 
 ## Prerequisites
 
