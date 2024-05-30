@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(Verlet)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Paths
 set(RAYLIB_DIR ${CMAKE_SOURCE_DIR}/deps/raylib-master/build/raylib)
