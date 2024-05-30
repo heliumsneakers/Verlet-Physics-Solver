@@ -12,8 +12,8 @@ This is a Verlet integration particle simulation project using raylib and ImGui.
 1. Clone the repository:
 
     ```sh
-    git clone https://github.com/yourusername/yourrepository.git
-    cd yourrepository
+    git clone https://github.com/heliumsneakers/Verlet-Physics-Solver.git
+    cd *repo location*
     ```
 
 2. Initialize and update submodules:
