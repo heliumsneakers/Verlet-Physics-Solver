@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 // custom includes here
-#include "src/physics.hpp"
+#include "physics.hpp"
 
 #define WIDTH 1280
 #define HEIGHT 720
