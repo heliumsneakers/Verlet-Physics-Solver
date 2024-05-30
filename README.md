@@ -20,7 +20,9 @@
     git submodule init
     git submodule update
     ```
+    
 NOTE: Must build raylib before building project: https://github.com/raysan5/raylib
+
 3. Create a build directory and build the project:
 
     ```sh
