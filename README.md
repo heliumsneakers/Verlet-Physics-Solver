@@ -1,7 +1,5 @@
 # Verlet Physics Solver
 
-This is a Verlet integration particle simulation project using raylib and ImGui.
-
 ## Prerequisites
 
 - CMake (version 3.10 or higher)
