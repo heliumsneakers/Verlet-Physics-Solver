@@ -1,0 +1,19 @@
+# Ignore build directory
+/build/
+
+# Ignore dependencies
+/deps/raylib-master/
+/deps/imgui-master/
+/deps/rlImGui/
+
+# Ignore other unnecessary files
+*.log
+*.tmp
+*.cache
+.DS_Store
+*.o
+*.a
+*.so
+*.dll
+*.exe
+
