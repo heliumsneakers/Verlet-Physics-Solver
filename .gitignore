@@ -1,10 +1,5 @@
 # Ignore build directory
 /build/
-/backup/
-# Ignore dependencies
-/deps/raylib-master/
-/deps/imgui-master/
-/deps/rlImGui/
 
 # Ignore other unnecessary files
 *.log
