@@ -33,13 +33,17 @@ add_executable(Verlet ${SOURCES})
 if (APPLE)
     # Link libraries for macOS
     target_link_libraries(Verlet PRIVATE ${RAYLIB_DIR}/libraylib.a "-framework OpenGL" "-framework Cocoa" "-framework IOKit" "-framework CoreVideo")
+    target_compile_options(Verlet PRIVATE -O3)
 elseif (UNIX)
     # Link libraries for Linux
     target_link_libraries(Verlet PRIVATE ${RAYLIB_DIR}/libraylib.a m GL glfw dl pthread)
+    target_compile_options(Verlet PRIVATE -O3)
 elseif (WIN32)
     # Link libraries for Windows
     set(RAYLIB_LIB ${RAYLIB_DIR}/Debug/raylib.lib) # Adjust path as necessary
     target_link_libraries(Verlet PRIVATE ${RAYLIB_LIB} opengl32 gdi32 winmm shell32)
+    target_compile_options(Verlet PRIVATE /O2)  # /O2 is equivalent to -O3 in MSVC
 endif()
+
 # Add raylib definitions
 target_compile_definitions(Verlet PRIVATE -DUSE_RAYLIB)
