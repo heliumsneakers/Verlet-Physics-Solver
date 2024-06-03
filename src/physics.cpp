@@ -198,6 +198,18 @@ void PushParticles(Vector2 position, float force) {
     }
 }
 
+void PickUpParticles(Vector2 position, float radius, Vector2 force) {
+    for (auto& particle : particles) {
+        Vector2 delta = Vector2Subtract(particle.position, position);
+        float distance = Vector2Length(delta);
+        if (distance < radius) {
+            Vector2 normalized = Vector2Scale(delta, 1.0f / distance);
+            ApplyForce(particle, Vector2Scale(normalized, force.x));
+            ApplyForce(particle, {0, force.y}); // Separate the x and y components of the force
+        }
+    }
+}
+
 void DrawParticleCount() {
     char countText[50];
     snprintf(countText, sizeof(countText), "Particles: %zu", particles.size());

@@ -16,7 +16,8 @@ Color bgColor = BLACK;
 enum MouseAction {
     NONE,
     SPAWN_PARTICLES,
-    PUSH_PARTICLES
+    PUSH_PARTICLES,
+    PICK_PARTICLES
 };
 
 enum SimulationMode {
@@ -28,6 +29,8 @@ MouseAction currentAction = NONE;
 SimulationMode currentMode = FLUID;
 float particleRadius = 5.0f;
 float pushForce = 100.0f;
+float pickRadius = 100.0f;
+Vector2 pickForce = {-250.0f, -50.0f};
 bool dragging = false;
 
 // Convert raylib Color to float array for ImGui
@@ -74,6 +77,8 @@ int main() {
                 SpawnParticle(mousePosition, particleRadius, &color);
             } else if (currentAction == PUSH_PARTICLES) {
                 PushParticles(mousePosition, -pushForce);
+            } else if (currentAction == PICK_PARTICLES) {
+                PickUpParticles(mousePosition, pickRadius, pickForce);
             }
             dragging = true;
         } else {
@@ -99,13 +104,7 @@ int main() {
             ImGui::Combo("Simulation Mode", &currentModeIndex, modes, IM_ARRAYSIZE(modes));
             currentMode = static_cast<SimulationMode>(currentModeIndex);
 
-            ImGui::ColorEdit3("Background Color", bgColorArray);
-            ImGui::ColorEdit3("Shape Color", colorArray);
-
-            ImGui::SliderFloat("Collision Damping", &damping, 0.1, 1.0);
-            ImGui::SliderFloat("Gravity", &gravity, -98.1f, 98.1f);
-
-            const char* actions[] = { "None", "Spawn Particles", "Push Particles" };
+            const char* actions[] = { "None", "Spawn", "Push", "Pick Up" };
             int currentActionIndex = currentAction;
             ImGui::Combo("Mouse Action", &currentActionIndex, actions, IM_ARRAYSIZE(actions));
 
@@ -115,6 +114,13 @@ int main() {
             } else if (currentAction == PUSH_PARTICLES) {
                 ImGui::SliderFloat("Push Force", &pushForce, 100.0f, 1000.0f);
             }
+            
+
+            ImGui::ColorEdit3("Background Color", bgColorArray);
+            ImGui::ColorEdit3("Shape Color", colorArray);
+
+            ImGui::SliderFloat("Collision Damping", &damping, 0.1, 1.0);
+            ImGui::SliderFloat("Gravity", &gravity, -98.1f, 98.1f);
 
             // Fluid parameters
             if (currentMode == FLUID) {

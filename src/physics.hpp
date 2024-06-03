@@ -22,6 +22,7 @@ void DrawParticles();
 void SpawnParticle(Vector2 position, float radius, Color* color);
 void ClearParticles();
 void PushParticles(Vector2 position, float force);
+void PickUpParticles(Vector2 position, float radius, Vector2 force);
 void DrawParticleCount();
 
 // SPH specific functions
