@@ -19,7 +19,13 @@ enum MouseAction {
     PUSH_PARTICLES
 };
 
+enum SimulationMode {
+    VERLET,
+    FLUID
+};
+
 MouseAction currentAction = NONE;
+SimulationMode currentMode = FLUID;
 float particleRadius = 5.0f;
 float pushForce = 100.0f;
 bool dragging = false;
@@ -41,23 +47,26 @@ Color FloatArrayToColor(const float* floatArray) {
     return color;
 }
 
-int main(){
+int main() {
     InitWindow(WIDTH, HEIGHT, "Verlet Integration");
- 
-    InitializeParticles(100, &color);
+
+    InitializeParticles(1500, &color);
 
     rlImGuiSetup(true); // init raylib imgui with darkmode
-    
+
     SetTargetFPS(144);
 
     float bgColorArray[3];
     float colorArray[3];
 
-    while(!WindowShouldClose()){
-        
+    while (!WindowShouldClose()) {
         float deltaTime = GetFrameTime();
 
-        UpdateParticles(deltaTime);
+        if (currentMode == VERLET) {
+            UpdateVerletParticles(deltaTime);
+        } else if (currentMode == FLUID) {
+            UpdateSPHParticles(deltaTime);
+        }
 
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
             Vector2 mousePosition = GetMousePosition();
@@ -70,9 +79,9 @@ int main(){
         } else {
             dragging = false;
         }
-        
+
         BeginDrawing();
-        
+
         ClearBackground(bgColor);
 
         DrawParticles(); // Draw particles first
@@ -84,18 +93,39 @@ int main(){
 
         bool showWindow = ImGui::Begin("Simulation Settings", NULL, ImGuiWindowFlags_AlwaysAutoResize);
 
-        if (showWindow){
+        if (showWindow) {
+            const char* modes[] = { "Verlet", "Fluid" };
+            int currentModeIndex = currentMode;
+            ImGui::Combo("Simulation Mode", &currentModeIndex, modes, IM_ARRAYSIZE(modes));
+            currentMode = static_cast<SimulationMode>(currentModeIndex);
+
             ImGui::ColorEdit3("Background Color", bgColorArray);
             ImGui::ColorEdit3("Shape Color", colorArray);
+
+            ImGui::SliderFloat("Collision Damping", &damping, 0.1, 1.0);
+            ImGui::SliderFloat("Gravity", &gravity, -98.1f, 98.1f);
+
             const char* actions[] = { "None", "Spawn Particles", "Push Particles" };
             int currentActionIndex = currentAction;
             ImGui::Combo("Mouse Action", &currentActionIndex, actions, IM_ARRAYSIZE(actions));
+
             currentAction = static_cast<MouseAction>(currentActionIndex);
-            if (currentAction == SPAWN_PARTICLES){
+            if (currentAction == SPAWN_PARTICLES) {
                 ImGui::SliderFloat("Particle Radius", &particleRadius, 2.0f, 10.0f);
-            }
-            else if (currentAction == PUSH_PARTICLES){
+            } else if (currentAction == PUSH_PARTICLES) {
                 ImGui::SliderFloat("Push Force", &pushForce, 100.0f, 1000.0f);
+            }
+
+            // Fluid parameters
+            if (currentMode == FLUID) {
+                ImGui::SliderFloat("Density", &den, 1.0f, 100.0f);
+                ImGui::SliderFloat("Near Density", &n_den, 1.0f, 100.0f);
+                ImGui::SliderFloat("Pressure", &pres, 1.0f, 100.0f);
+                ImGui::SliderFloat("Near Pressure", &n_pres, 1.0f, 100.0f);
+                ImGui::SliderFloat("Stiffness", &k, -1.0f, 1.0f);
+                ImGui::SliderFloat("Near Pressure Stiffness", &kNear, 0.1f, 1.0f);
+                ImGui::SliderFloat("Rest Density", &rho0, 0.1f, 50.0f);
+                ImGui::SliderFloat("Smoothing Radius", &h, 0.1f, 32.0f);
             }
 
             if (ImGui::Button("Clear Particles")) {
@@ -111,8 +141,8 @@ int main(){
 
         rlImGuiEnd();
 
-        DrawFPS(WIDTH/2,10);
-        
+        DrawFPS(WIDTH / 2, 10);
+
         DrawParticleCount();
 
         EndDrawing();
@@ -124,4 +154,3 @@ int main(){
 
     return 0;
 }
-
