@@ -25,7 +25,7 @@ SimulationMode currentMode = FLUID;
 float particleRadius = 5.0f;
 float pushForce = 100.0f;
 float pickRadius = 100.0f;
-Vector2 pickForce = {-150.0f, -100.0f};
+Vector2 pickForce = {-150.0f, -150.0f};
 bool dragging = false;
 
 // Convert raylib Color to float array for ImGui
@@ -84,7 +84,7 @@ int main() {
 
         ClearBackground(bgColor);
 
-        DrawParticles(); // Draw particles first
+        DrawParticles(&color); // Draw particles first
 
         rlImGuiBegin(); // start ImGui content mode
 

@@ -15,6 +15,9 @@ float h         = 8.0f;      // Interaction radius || Smoothing radius
 float gravity   = 98.1f;     
 float damping   = 0.999f;     // Damping factor for Verlet collisions
 
+float maxVelocity = 10.0f;
+
+
 // fixed timestep
 float fixedTime = 0.08f;
 
@@ -106,6 +109,8 @@ void UpdateVerletParticles(float deltaTime) {
     for (auto& particle : particles) {
         ApplyForce(particle, { 0, gravity }); // Gravity
         VerletIntegration(particle, deltaTime);
+        particle.color = VelocityToColor(particle.velocity, maxVelocity);
+
     }
 
     // Resolve collisions
@@ -124,7 +129,6 @@ void UpdateVerletParticles(float deltaTime) {
 }
 
 void UpdateSPHParticles(float fixedTime) {
-    float maxVelocity = 10.0f;
 
     // Calculate maximum velocity for normalization
     for (const auto& particle : particles) {
@@ -232,9 +236,13 @@ void ComputeDisplacements(float deltaTime) {
 }
 */
 
-void DrawParticles() {
+void DrawParticles(Color* color) {
     for (const auto& particle : particles) {
+        if (currentMode == FLUID){
         DrawCircleV(particle.position, particle.radius, particle.color);
+        } else if (currentMode == VERLET){
+        DrawCircleV(particle.position, particle.radius, *color);
+        } 
     }
 }
 

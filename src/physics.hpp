@@ -23,7 +23,7 @@ struct Particle {
 
 void InitializeParticles(int count, Color particleColor);
 void UpdateVerletParticles(float deltaTime);
-void DrawParticles();
+void DrawParticles(Color* color);
 void SpawnParticle(Vector2 position, float radius, Color color);
 void ClearParticles();
 void PushParticles(Vector2 position, float force);
