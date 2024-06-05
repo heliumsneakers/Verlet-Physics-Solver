@@ -1,5 +1,6 @@
 #include "physics.hpp"
 #include "raymath.h"
+#include <vector>
 
 std::vector<Particle> particles;
 
@@ -12,16 +13,18 @@ float kNear     = 1.5f;      // Near pressure stiffness parameter
 float rho0      = 3000.0f;   // Rest density
 float h         = 8.0f;      // Interaction radius || Smoothing radius
 float gravity   = 98.1f;     
-float damping   = 0.98f;     // Damping factor for Verlet collisions
+float damping   = 0.999f;     // Damping factor for Verlet collisions
 
+// fixed timestep
+float fixedTime = 0.08f;
 
-
-void InitializeParticles(int count, Color* particleColor) {
+void InitializeParticles(int count, Color particleColor) {
     for (int i = 0; i < count; ++i) {
         Particle p;
         p.position = { (float)GetRandomValue(100, 700), (float)GetRandomValue(100, 500) };
         p.oldPosition = p.position;
         p.acceleration = { 0, 0 };
+        p.velocity = { 0, 0 };
         p.radius = 5.0f;
         p.color = particleColor;
         p.density = den;
@@ -36,15 +39,31 @@ void ApplyForce(Particle& p, Vector2 force) {
     p.acceleration = Vector2Add(p.acceleration, force);
 }
 
+float GetParticleVelocity(const Particle& p) {
+    Vector2 velocity = Vector2Subtract(p.position, p.oldPosition);
+    return Vector2Length(velocity);
+}
+
+Color VelocityToColor(const Vector2& velocity, float maxVelocity) {
+    float speed = Vector2Length(velocity);
+    float t = speed / maxVelocity;
+    unsigned char r = static_cast<unsigned char>(0 * (1 - t) + 173 * t);
+    unsigned char g = static_cast<unsigned char>(0 * (1 - t) + 216 * t);
+    unsigned char b = static_cast<unsigned char>(139 * (1 - t) + 230 * t);
+    return (Color){ r, g, b, 255 };
+}
+
 void VerletIntegration(Particle& p, float deltaTime) {
     Vector2 temp = p.position;
-    p.position = Vector2Add(p.position, Vector2Subtract(p.position, p.oldPosition));
+    p.velocity = Vector2Subtract(p.position, p.oldPosition);  // Calculate velocity
+    p.position = Vector2Add(p.position, p.velocity);
     p.position = Vector2Add(p.position, Vector2Scale(p.acceleration, deltaTime * deltaTime));
     p.oldPosition = temp;
     p.acceleration = { 0, 0 };
 }
 
 void ResolveCollision(Particle& p1, Particle& p2) {
+
     Vector2 delta = Vector2Subtract(p1.position, p2.position);
     float distance = Vector2Length(delta);
     float minDistance = p1.radius + p2.radius;
@@ -104,26 +123,68 @@ void UpdateVerletParticles(float deltaTime) {
     }
 }
 
-void UpdateSPHParticles(float deltaTime) {
+void UpdateSPHParticles(float fixedTime) {
+    float maxVelocity = 10.0f;
+
+    // Calculate maximum velocity for normalization
+    for (const auto& particle : particles) {
+        float speed = Vector2Length(particle.velocity);
+        if (speed > maxVelocity) {
+            maxVelocity = speed;
+        }
+    }
+
     for (auto& particle : particles) {
         ApplyForce(particle, { 0, gravity }); // Gravity
-    }
-    ComputeDensities();
-    ComputePressures();
-    ComputeDisplacements(deltaTime);
-
-    for (auto& particle : particles) {
-        VerletIntegration(particle, deltaTime);
+        VerletIntegration(particle, fixedTime);
+          // Update particle color based on velocity
+        particle.color = VelocityToColor(particle.velocity, maxVelocity);
     }
 
-    // Constrain particles to screen bounds
+    DoubleDensityRelaxation(fixedTime);
+
     int screenWidth = GetScreenWidth();
     int screenHeight = GetScreenHeight();
     for (auto& particle : particles) {
-        ConstrainToBounds(particle, screenWidth, screenHeight);
+        ConstrainToBounds(particle, screenWidth, screenHeight); 
     }
 }
 
+void DoubleDensityRelaxation(float fixedTime) {
+    // Calculate density
+    for (auto& particle : particles) {
+        particle.density = den;
+        particle.nearDensity = n_den;
+        for (const auto& neighbor : particles) {
+            Vector2 delta = Vector2Subtract(neighbor.position, particle.position);
+            float r = Vector2Length(delta);
+            if (r < h){
+                float q = r/h;
+                particle.density += (1 - q) * (1 - q);
+                particle.nearDensity += (1 - q) * (1 - q) * (1 - q);
+            }
+        }
+        // Calculate pressures
+        particle.pressure = k * (particle.density - rho0);
+        particle.nearPressure = kNear * particle.nearDensity;
+        Vector2 dx = { 0, 0 };
+
+        // Apply displacements
+        for (auto& neighbor : particles) {
+            Vector2 delta = Vector2Subtract(neighbor.position, particle.position);
+            float r = Vector2Length(delta);
+            if (r < h) {
+                float q = r / h;
+                Vector2 D = Vector2Scale(delta, (fixedTime * fixedTime) * (particle.pressure * (1 - q) + particle.nearPressure * (1 - q) * (1 - q)));
+                neighbor.position = Vector2Add(neighbor.position, Vector2Scale(D, 0.5f));
+                dx = Vector2Subtract(dx, Vector2Scale(D, 0.5f));
+            }
+        }
+        particle.position = Vector2Add(particle.position, dx);
+    }
+}
+
+/*
 void ComputeDensities() {
     for (auto& particle : particles) {
         particle.density = den;
@@ -139,6 +200,12 @@ void ComputeDensities() {
         }
     }
 }
+
+// TODO: Resolve pressure calculations. Currently we are not getting the proper effect from
+//       our calculations. 
+//       P <- k(P - P0)
+//       pNear <- kNear - pNear
+//       dx <- 0
 
 void ComputePressures() {
     for (auto& particle : particles) {
@@ -163,14 +230,15 @@ void ComputeDisplacements(float deltaTime) {
         particle.position = Vector2Add(particle.position, dx);
     }
 }
+*/
 
 void DrawParticles() {
     for (const auto& particle : particles) {
-        DrawCircleV(particle.position, particle.radius, *(particle.color));
+        DrawCircleV(particle.position, particle.radius, particle.color);
     }
 }
 
-void SpawnParticle(Vector2 position, float radius, Color* color) {
+void SpawnParticle(Vector2 position, float radius, Color color) {
     Particle p;
     p.position = position;
     p.oldPosition = position;

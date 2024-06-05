@@ -20,17 +20,12 @@ enum MouseAction {
     PICK_PARTICLES
 };
 
-enum SimulationMode {
-    VERLET,
-    FLUID
-};
-
 MouseAction currentAction = NONE;
 SimulationMode currentMode = FLUID;
 float particleRadius = 5.0f;
 float pushForce = 100.0f;
 float pickRadius = 100.0f;
-Vector2 pickForce = {-250.0f, -50.0f};
+Vector2 pickForce = {-150.0f, -100.0f};
 bool dragging = false;
 
 // Convert raylib Color to float array for ImGui
@@ -53,7 +48,7 @@ Color FloatArrayToColor(const float* floatArray) {
 int main() {
     InitWindow(WIDTH, HEIGHT, "Verlet Integration");
 
-    InitializeParticles(1500, &color);
+    InitializeParticles(3000, color);
 
     rlImGuiSetup(true); // init raylib imgui with darkmode
 
@@ -74,7 +69,7 @@ int main() {
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
             Vector2 mousePosition = GetMousePosition();
             if (currentAction == SPAWN_PARTICLES && dragging) {
-                SpawnParticle(mousePosition, particleRadius, &color);
+                SpawnParticle(mousePosition, particleRadius, color);
             } else if (currentAction == PUSH_PARTICLES) {
                 PushParticles(mousePosition, -pushForce);
             } else if (currentAction == PICK_PARTICLES) {
@@ -117,9 +112,7 @@ int main() {
             
 
             ImGui::ColorEdit3("Background Color", bgColorArray);
-            ImGui::ColorEdit3("Shape Color", colorArray);
-
-            ImGui::SliderFloat("Collision Damping", &damping, 0.1, 1.0);
+            ImGui::ColorEdit3("Shape Color", colorArray); 
             ImGui::SliderFloat("Gravity", &gravity, -98.1f, 98.1f);
 
             // Fluid parameters

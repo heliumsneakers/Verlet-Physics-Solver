@@ -1,13 +1,18 @@
 #pragma once
 #include "raylib.h"
-#include <vector>
+
+enum SimulationMode {
+    VERLET,
+    FLUID
+};
 
 struct Particle {
     Vector2 position;
     Vector2 oldPosition;
     Vector2 acceleration;
+    Vector2 velocity;
     float radius;
-    Color* color; // Pointer to the color
+    Color color; // Pointer to the color
 
     // SPH specific properties
     float density;
@@ -16,20 +21,24 @@ struct Particle {
     float nearPressure;
 };
 
-void InitializeParticles(int count, Color* particleColor);
+void InitializeParticles(int count, Color particleColor);
 void UpdateVerletParticles(float deltaTime);
 void DrawParticles();
-void SpawnParticle(Vector2 position, float radius, Color* color);
+void SpawnParticle(Vector2 position, float radius, Color color);
 void ClearParticles();
 void PushParticles(Vector2 position, float force);
 void PickUpParticles(Vector2 position, float radius, Vector2 force);
 void DrawParticleCount();
 
 // SPH specific functions
-void UpdateSPHParticles(float deltaTime);
+void UpdateSPHParticles(float fixedTime);
+void DoubleDensityRelaxation(float fixedTime);
+/*
 void ComputeDensities();
 void ComputePressures();
-void ComputeDisplacements(float deltaTime);
+void ComputeDisplacements(float deltaTime); */
+
+extern SimulationMode currentMode;
 
 extern float den;
 extern float n_den;
