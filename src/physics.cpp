@@ -1,5 +1,10 @@
 #include "physics.hpp"
 #include "raymath.h"
+
+#include <cstddef>
+#include <thread>
+#include <mutex>
+#include <algorithm>
 #include <vector>
 
 std::vector<Particle> particles;
@@ -16,6 +21,29 @@ float gravity   = 98.1f;
 float damping   = 0.999f;     // Damping factor for Verlet collisions
 
 float maxVelocity = 1.0f;
+
+// Helper function to split workloads. Multithreading for the update functions and physics calculations.
+template <typename F>\
+void ParallelFor(size_t start, size_t end, F&& func){
+    size_t numThreads = std::thread::hardware_concurrency();
+    size_t blockSize = (end - start + numThreads - 1) / numThreads; // Ceiling division.
+    std::vector<std::thread> threads(numThreads);
+    
+    for (size_t t = 0; t < numThreads; ++t){
+        size_t blockStart = start + t * blockSize;
+        size_t blockEnd = std::min(blockStart + blockSize, end);
+        threads[t] = std::thread([=, &func]() {
+            for (size_t i = blockStart; i < blockEnd; i++){
+                func(i);
+            }    
+        });
+    }
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+}
+
 
 void InitializeParticles(int count, Color particleColor) {
     for (int i = 0; i < count; ++i) {
@@ -102,83 +130,73 @@ void ConstrainToBounds(Particle& p, int screenWidth, int screenHeight) {
 }
 
 void UpdateVerletParticles(float deltaTime) {
-    for (auto& particle : particles) {
-        ApplyForce(particle, { 0, gravity }); // Gravity
-        VerletIntegration(particle, deltaTime);
-        particle.color = VelocityToColor(particle.velocity, maxVelocity);
 
-    }
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
 
-    // Resolve collisions
-    for (size_t i = 0; i < particles.size(); ++i) {
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        ApplyForce(particles[i], { 0, gravity }); 
+        VerletIntegration(particles[i], deltaTime);
+ 
         for (size_t j = i + 1; j < particles.size(); ++j) {
             ResolveCollision(particles[i], particles[j]);
         }
-    }
 
-    // Constrain particles to screen bounds
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    for (auto& particle : particles) {
-        ConstrainToBounds(particle, screenWidth, screenHeight);
-    }
+        ConstrainToBounds(particles[i], screenWidth, screenHeight);
+    });
 }
 
 void UpdateSPHParticles(float deltaTime) {
+    
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
 
-    DoubleDensityRelaxation(deltaTime);
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        ApplyForce(particles[i], { 0, gravity }); // Gravity
+        VerletIntegration(particles[i], deltaTime);
 
-    for (auto& particle : particles) {
-        ApplyForce(particle, { 0, gravity }); // Gravity
-        VerletIntegration(particle, deltaTime);
-
-        // Update particle color based on velocity
-        float speed = Vector2Length(particle.velocity);
+        float speed = Vector2Length(particles[i].velocity);
         if (speed > maxVelocity) {
             maxVelocity = speed;
         }
-        particle.color = VelocityToColor(particle.velocity, maxVelocity);
-    }
- 
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    for (auto& particle : particles) {
-        ConstrainToBounds(particle, screenWidth, screenHeight); 
-    }
+        particles[i].color = VelocityToColor(particles[i].velocity, maxVelocity);
+        
+        ConstrainToBounds(particles[i], screenWidth, screenHeight);
+    });
+
+    DoubleDensityRelaxation(deltaTime);
+
 }
 
 void DoubleDensityRelaxation(float deltaTime) {
-    // Calculate density
-    for (auto& particle : particles) {
-        particle.density = den;
-        particle.nearDensity = n_den;
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        particles[i].density = den;
+        particles[i].nearDensity = n_den;
         for (const auto& neighbor : particles) {
-            Vector2 delta = Vector2Subtract(neighbor.position, particle.position);
-            float r = Vector2Length(delta);
-            if (r < h){
-                float q = r/h;
-                particle.density += (1 - q) * (1 - q);
-                particle.nearDensity += (1 - q) * (1 - q) * (1 - q);
-            }
-        }
-        // Calculate pressures
-        particle.pressure = k * (particle.density - rho0);
-        particle.nearPressure = kNear * particle.nearDensity;
-        Vector2 dx = { 0, 0 };
-
-        // Apply displacements
-        for (auto& neighbor : particles) {
-            Vector2 delta = Vector2Subtract(neighbor.position, particle.position);
+            Vector2 delta = Vector2Subtract(neighbor.position, particles[i].position);
             float r = Vector2Length(delta);
             if (r < h) {
                 float q = r / h;
-                Vector2 D = Vector2Scale(delta, (deltaTime * deltaTime) * (particle.pressure * (1 - q) + particle.nearPressure * (1 - q) * (1 - q)));
+                particles[i].density += (1 - q) * (1 - q);
+                particles[i].nearDensity += (1 - q) * (1 - q) * (1 - q);
+            }
+        }
+        particles[i].pressure = k * (particles[i].density - rho0);
+        particles[i].nearPressure = kNear * particles[i].nearDensity;
+        Vector2 dx = { 0, 0 };
+
+        for (auto& neighbor : particles) {
+            Vector2 delta = Vector2Subtract(neighbor.position, particles[i].position);
+            float r = Vector2Length(delta);
+            if (r < h) {
+                float q = r / h;
+                Vector2 D = Vector2Scale(delta, (deltaTime * deltaTime) * (particles[i].pressure * (1 - q) + particles[i].nearPressure * (1 - q) * (1 - q)));
                 neighbor.position = Vector2Add(neighbor.position, Vector2Scale(D, 0.5f));
                 dx = Vector2Subtract(dx, Vector2Scale(D, 0.5f));
             }
         }
-        particle.position = Vector2Add(particle.position, dx);
-    }
+        particles[i].position = Vector2Add(particles[i].position, dx);
+    });
 }
 
 void DrawParticles(Color* color) {
