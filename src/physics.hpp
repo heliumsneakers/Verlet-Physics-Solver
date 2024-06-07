@@ -22,6 +22,8 @@ struct Particle {
 };
 
 void InitializeParticles(int count, Color particleColor);
+void AssignParticlesToGrid();
+void ResolveGridCollisions();
 void UpdateVerletParticles(float deltaTime);
 void DrawParticles(Color* color);
 void SpawnParticle(Vector2 position, float radius, Color color);

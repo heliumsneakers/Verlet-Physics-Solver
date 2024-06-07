@@ -7,8 +7,8 @@
 // custom includes here
 #include "physics.hpp"
 
-#define WIDTH 1280
-#define HEIGHT 720
+#define WIDTH 800
+#define HEIGHT 600
 
 Color color = RAYWHITE;
 Color bgColor = BLACK;
@@ -48,7 +48,7 @@ Color FloatArrayToColor(const float* floatArray) {
 int main() {
     InitWindow(WIDTH, HEIGHT, "Verlet Integration");
 
-    InitializeParticles(3000, color);
+    InitializeParticles(9000, color);
 
     rlImGuiSetup(true); // init raylib imgui with darkmode
 

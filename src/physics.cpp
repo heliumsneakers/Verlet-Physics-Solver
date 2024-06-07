@@ -1,9 +1,9 @@
 #include "physics.hpp"
+#include "raylib.h"
 #include "raymath.h"
 
 #include <cstddef>
 #include <thread>
-#include <mutex>
 #include <algorithm>
 #include <vector>
 
@@ -22,8 +22,14 @@ float damping   = 0.999f;     // Damping factor for Verlet collisions
 
 float maxVelocity = 1.0f;
 
+// Parameters for grid traversal
+float cellSize = h;
+int gridWidth;
+int gridHeight;
+std::vector<std::vector<std::vector<Particle*>>> grid;
+
 // Helper function to split workloads. Multithreading for the update functions and physics calculations.
-template <typename F>\
+template <typename F>
 void ParallelFor(size_t start, size_t end, F&& func){
     size_t numThreads = std::thread::hardware_concurrency();
     size_t blockSize = (end - start + numThreads - 1) / numThreads; // Ceiling division.
@@ -44,7 +50,6 @@ void ParallelFor(size_t start, size_t end, F&& func){
     }
 }
 
-
 void InitializeParticles(int count, Color particleColor) {
     for (int i = 0; i < count; ++i) {
         Particle p;
@@ -59,6 +64,27 @@ void InitializeParticles(int count, Color particleColor) {
         p.pressure = pres;
         p.nearPressure = n_pres;
         particles.push_back(p);
+    }
+
+    //Init grid with width and height based on particle smoothing radius and current screen size.
+    gridWidth = (int)ceil(GetScreenWidth() / cellSize);
+    gridHeight = (int)ceil(GetScreenHeight() / cellSize);
+    grid = std::vector<std::vector<std::vector<Particle*>>>(gridWidth, std::vector<std::vector<Particle*>>(gridHeight));
+}
+
+void AssignParticlesToGrid() {
+    for (auto& row : grid) {
+        for (auto& cell : row){
+            cell.clear();
+        }
+    }
+
+    for (auto& particle : particles) {
+        int cellX = (int)(particle.position.x / cellSize);
+        int cellY = (int)(particle.position.y / cellSize);
+        if (cellX >= 0 && cellX < gridWidth && cellY >= 0 && cellY < gridHeight) {
+            grid[cellX][cellY].push_back(&particle);
+        }
     }
 }
 
@@ -115,6 +141,24 @@ void ResolveCollision(Particle& p1, Particle& p2) {
     }
 }
 
+void ResolveGridCollisions() {
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        Particle& p1 = particles[i];
+        int cellX = (int)(p1.position.x / cellSize);
+        int cellY = (int)(p1.position.y / cellSize);
+
+        for (int x = std::max(0, cellX - 1); x <= std::min(gridWidth - 1, cellX + 1); ++x) {
+            for (int y = std::max(0, cellY - 1); y <= std::min(gridHeight - 1, cellY + 1); ++y) {
+                for (Particle* p2 : grid[x][y]) {
+                    if (&p1 != p2) {
+                        ResolveCollision(p1, *p2);
+                    }
+                }
+            }
+        }
+    });
+}
+
 void ConstrainToBounds(Particle& p, int screenWidth, int screenHeight) {
     if (p.position.x < p.radius) {
         p.position.x = p.radius;
@@ -137,13 +181,11 @@ void UpdateVerletParticles(float deltaTime) {
     ParallelFor(0, particles.size(), [&](size_t i) {
         ApplyForce(particles[i], { 0, gravity }); 
         VerletIntegration(particles[i], deltaTime);
- 
-        for (size_t j = i + 1; j < particles.size(); ++j) {
-            ResolveCollision(particles[i], particles[j]);
-        }
-
         ConstrainToBounds(particles[i], screenWidth, screenHeight);
     });
+
+    AssignParticlesToGrid();
+    ResolveGridCollisions();
 }
 
 void UpdateSPHParticles(float deltaTime) {
@@ -164,38 +206,54 @@ void UpdateSPHParticles(float deltaTime) {
         ConstrainToBounds(particles[i], screenWidth, screenHeight);
     });
 
+    AssignParticlesToGrid();
     DoubleDensityRelaxation(deltaTime);
 
 }
 
 void DoubleDensityRelaxation(float deltaTime) {
     ParallelFor(0, particles.size(), [&](size_t i) {
-        particles[i].density = den;
-        particles[i].nearDensity = n_den;
-        for (const auto& neighbor : particles) {
-            Vector2 delta = Vector2Subtract(neighbor.position, particles[i].position);
-            float r = Vector2Length(delta);
-            if (r < h) {
-                float q = r / h;
-                particles[i].density += (1 - q) * (1 - q);
-                particles[i].nearDensity += (1 - q) * (1 - q) * (1 - q);
+        Particle& particle = particles[i];
+        particle.density = den;
+        particle.nearDensity = n_den;
+
+        int cellX = (int)(particle.position.x / cellSize);
+        int cellY = (int)(particle.position.y / cellSize);
+
+        for (int x = std::max(0, cellX - 1); x <= std::min(gridWidth - 1, cellX + 1); ++x) {
+            for (int y = std::max(0, cellY - 1); y <= std::min(gridHeight - 1, cellY + 1); ++y) {
+                for (Particle* neighbor : grid[x][y]) {
+                    Vector2 delta = Vector2Subtract(neighbor->position, particle.position);
+                    float r = Vector2Length(delta);
+                    if (r < h) {
+                        float q = r / h;
+                        particle.density += (1 - q) * (1 - q);
+                        particle.nearDensity += (1 - q) * (1 - q) * (1 - q);
+                    }
+                }
             }
         }
-        particles[i].pressure = k * (particles[i].density - rho0);
-        particles[i].nearPressure = kNear * particles[i].nearDensity;
+
+        particle.pressure = k * (particle.density - rho0);
+        particle.nearPressure = kNear * particle.nearDensity;
         Vector2 dx = { 0, 0 };
 
-        for (auto& neighbor : particles) {
-            Vector2 delta = Vector2Subtract(neighbor.position, particles[i].position);
-            float r = Vector2Length(delta);
-            if (r < h) {
-                float q = r / h;
-                Vector2 D = Vector2Scale(delta, (deltaTime * deltaTime) * (particles[i].pressure * (1 - q) + particles[i].nearPressure * (1 - q) * (1 - q)));
-                neighbor.position = Vector2Add(neighbor.position, Vector2Scale(D, 0.5f));
-                dx = Vector2Subtract(dx, Vector2Scale(D, 0.5f));
+        for (int x = std::max(0, cellX - 1); x <= std::min(gridWidth - 1, cellX + 1); ++x) {
+            for (int y = std::max(0, cellY - 1); y <= std::min(gridHeight - 1, cellY + 1); ++y) {
+                for (Particle* neighbor : grid[x][y]) {
+                    Vector2 delta = Vector2Subtract(neighbor->position, particle.position);
+                    float r = Vector2Length(delta);
+                    if (r < h) {
+                        float q = r / h;
+                        Vector2 D = Vector2Scale(delta, (deltaTime * deltaTime) * (particle.pressure * (1 - q) + particle.nearPressure * (1 - q) * (1 - q)));
+                        neighbor->position = Vector2Add(neighbor->position, Vector2Scale(D, 0.5f));
+                        dx = Vector2Subtract(dx, Vector2Scale(D, 0.5f));
+                    }
+                }
             }
         }
-        particles[i].position = Vector2Add(particles[i].position, dx);
+
+        particle.position = Vector2Add(particle.position, dx);
     });
 }
 
