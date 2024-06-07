@@ -15,11 +15,7 @@ float h         = 8.0f;      // Interaction radius || Smoothing radius
 float gravity   = 98.1f;     
 float damping   = 0.999f;     // Damping factor for Verlet collisions
 
-float maxVelocity = 10.0f;
-
-
-// fixed timestep
-float fixedTime = 0.08f;
+float maxVelocity = 1.0f;
 
 void InitializeParticles(int count, Color particleColor) {
     for (int i = 0; i < count; ++i) {
@@ -128,25 +124,22 @@ void UpdateVerletParticles(float deltaTime) {
     }
 }
 
-void UpdateSPHParticles(float fixedTime) {
+void UpdateSPHParticles(float deltaTime) {
 
-    // Calculate maximum velocity for normalization
-    for (const auto& particle : particles) {
+    DoubleDensityRelaxation(deltaTime);
+
+    for (auto& particle : particles) {
+        ApplyForce(particle, { 0, gravity }); // Gravity
+        VerletIntegration(particle, deltaTime);
+
+        // Update particle color based on velocity
         float speed = Vector2Length(particle.velocity);
         if (speed > maxVelocity) {
             maxVelocity = speed;
         }
-    }
-
-    for (auto& particle : particles) {
-        ApplyForce(particle, { 0, gravity }); // Gravity
-        VerletIntegration(particle, fixedTime);
-          // Update particle color based on velocity
         particle.color = VelocityToColor(particle.velocity, maxVelocity);
     }
-
-    DoubleDensityRelaxation(fixedTime);
-
+ 
     int screenWidth = GetScreenWidth();
     int screenHeight = GetScreenHeight();
     for (auto& particle : particles) {
@@ -154,7 +147,7 @@ void UpdateSPHParticles(float fixedTime) {
     }
 }
 
-void DoubleDensityRelaxation(float fixedTime) {
+void DoubleDensityRelaxation(float deltaTime) {
     // Calculate density
     for (auto& particle : particles) {
         particle.density = den;
@@ -179,53 +172,6 @@ void DoubleDensityRelaxation(float fixedTime) {
             float r = Vector2Length(delta);
             if (r < h) {
                 float q = r / h;
-                Vector2 D = Vector2Scale(delta, (fixedTime * fixedTime) * (particle.pressure * (1 - q) + particle.nearPressure * (1 - q) * (1 - q)));
-                neighbor.position = Vector2Add(neighbor.position, Vector2Scale(D, 0.5f));
-                dx = Vector2Subtract(dx, Vector2Scale(D, 0.5f));
-            }
-        }
-        particle.position = Vector2Add(particle.position, dx);
-    }
-}
-
-/*
-void ComputeDensities() {
-    for (auto& particle : particles) {
-        particle.density = den;
-        particle.nearDensity = n_den;
-        for (const auto& neighbor : particles) {
-            Vector2 delta = Vector2Subtract(neighbor.position, particle.position);
-            float r = Vector2Length(delta);
-            if (r < h) {
-                float q = r / h;
-                particle.density += (1 - q) * (1 - q);
-                particle.nearDensity += (1 - q) * (1 - q) * (1 - q);
-            }
-        }
-    }
-}
-
-// TODO: Resolve pressure calculations. Currently we are not getting the proper effect from
-//       our calculations. 
-//       P <- k(P - P0)
-//       pNear <- kNear - pNear
-//       dx <- 0
-
-void ComputePressures() {
-    for (auto& particle : particles) {
-        particle.pressure = k * (particle.density - rho0);
-        particle.nearPressure = kNear * particle.nearDensity;
-    }
-}
-
-void ComputeDisplacements(float deltaTime) {
-    for (auto& particle : particles) {
-        Vector2 dx = { 0, 0 };
-        for (auto& neighbor : particles) {
-            Vector2 delta = Vector2Subtract(neighbor.position, particle.position);
-            float r = Vector2Length(delta);
-            if (r < h) {
-                float q = r / h;
                 Vector2 D = Vector2Scale(delta, (deltaTime * deltaTime) * (particle.pressure * (1 - q) + particle.nearPressure * (1 - q) * (1 - q)));
                 neighbor.position = Vector2Add(neighbor.position, Vector2Scale(D, 0.5f));
                 dx = Vector2Subtract(dx, Vector2Scale(D, 0.5f));
@@ -234,7 +180,6 @@ void ComputeDisplacements(float deltaTime) {
         particle.position = Vector2Add(particle.position, dx);
     }
 }
-*/
 
 void DrawParticles(Color* color) {
     for (const auto& particle : particles) {

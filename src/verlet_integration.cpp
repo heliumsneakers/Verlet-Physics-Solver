@@ -119,10 +119,8 @@ int main() {
             if (currentMode == FLUID) {
                 ImGui::SliderFloat("Density", &den, 1.0f, 100.0f);
                 ImGui::SliderFloat("Near Density", &n_den, 1.0f, 100.0f);
-                ImGui::SliderFloat("Pressure", &pres, 1.0f, 100.0f);
-                ImGui::SliderFloat("Near Pressure", &n_pres, 1.0f, 100.0f);
-                ImGui::SliderFloat("Stiffness", &k, -1.0f, 1.0f);
-                ImGui::SliderFloat("Near Pressure Stiffness", &kNear, 0.1f, 1.0f);
+                ImGui::SliderFloat("Pressure Multiplier", &k, -1.0f, 1.0f);
+                ImGui::SliderFloat("Near Pressure Multiplier", &kNear, 0.1f, 1.0f);
                 ImGui::SliderFloat("Rest Density", &rho0, 0.1f, 50.0f);
                 ImGui::SliderFloat("Smoothing Radius", &h, 0.1f, 32.0f);
             }

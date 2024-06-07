@@ -33,10 +33,6 @@ void DrawParticleCount();
 // SPH specific functions
 void UpdateSPHParticles(float fixedTime);
 void DoubleDensityRelaxation(float fixedTime);
-/*
-void ComputeDensities();
-void ComputePressures();
-void ComputeDisplacements(float deltaTime); */
 
 extern SimulationMode currentMode;
 
