@@ -48,7 +48,7 @@ Color FloatArrayToColor(const float* floatArray) {
 int main() {
     InitWindow(WIDTH, HEIGHT, "Verlet Integration");
 
-    InitializeParticles(9000, color);
+    InitializeParticles(10000, color);
 
     rlImGuiSetup(true); // init raylib imgui with darkmode
 
@@ -123,6 +123,7 @@ int main() {
                 ImGui::SliderFloat("Near Pressure Multiplier", &kNear, 0.1f, 1.0f);
                 ImGui::SliderFloat("Rest Density", &rho0, 0.1f, 50.0f);
                 ImGui::SliderFloat("Smoothing Radius", &h, 0.1f, 32.0f);
+                ImGui::SliderFloat("Sigma", &sigma, 0.001f, 0.999f);
             }
 
             if (ImGui::Button("Clear Particles")) {

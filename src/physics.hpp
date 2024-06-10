@@ -14,11 +14,16 @@ struct Particle {
     float radius;
     Color color; // Pointer to the color
 
-    // SPH specific properties
+    // SPH specific parameters
     float density;
     float nearDensity;
     float pressure;
     float nearPressure;
+
+    // Muller surface tension specific parameters
+    Vector2 gradient;
+    float curvature;
+    float colorField;
 };
 
 void InitializeParticles(int count, Color particleColor);
@@ -36,6 +41,12 @@ void DrawParticleCount();
 void UpdateSPHParticles(float fixedTime);
 void DoubleDensityRelaxation(float fixedTime);
 
+// Surface Tension functions from Mullers paper
+float KernelPoly6(float r, float h);
+Vector2 KernelPoly6Gradient(Vector2 r, float h);
+float KernelPoly6Laplacian(float r, float h);
+
+
 extern SimulationMode currentMode;
 
 extern float den;
@@ -48,3 +59,4 @@ extern float rho0;
 extern float h;
 extern float gravity;
 extern float damping;
+extern float sigma;

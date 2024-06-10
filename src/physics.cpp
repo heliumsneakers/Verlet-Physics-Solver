@@ -9,18 +9,20 @@
 
 std::vector<Particle> particles;
 
-float den       = 1.0f;      // Density
-float n_den     = 1000.0f;   // Near Density
-float pres      = 1000.0f;   // Pressure
-float n_pres    = 1.0f;      // Near Pressure
-float k         = -0.01f;    // Stiffness parameter
-float kNear     = 1.5f;      // Near pressure stiffness parameter
-float rho0      = 3000.0f;   // Rest density
-float h         = 8.0f;      // Interaction radius || Smoothing radius
-float gravity   = 98.1f;     
-float damping   = 0.999f;     // Damping factor for Verlet collisions
+float den           = 1.0f;      // Density
+float n_den         = 1000.0f;   // Near Density
+float pres          = 1000.0f;   // Pressure
+float n_pres        = 1.0f;      // Near Pressure
+float k             = -0.01f;    // Stiffness parameter
+float kNear         = 1.5f;      // Near pressure stiffness parameter
+float rho0          = 50.0f;     // Rest density
+float h             = 8.0f;      // Interaction radius || Smoothing radius
+float gravity       = 98.1f;     
+float damping       = 0.999f;    // Damping factor for Verlet collisions
 
-float maxVelocity = 1.0f;
+float maxVelocity   = 1.0f;
+float sigma         = 0.0728f;   // Surface tension coefficient for water-air interface
+         
 
 // Parameters for grid traversal
 float cellSize = h;
@@ -57,7 +59,7 @@ void InitializeParticles(int count, Color particleColor) {
         p.oldPosition = p.position;
         p.acceleration = { 0, 0 };
         p.velocity = { 0, 0 };
-        p.radius = 5.0f;
+        p.radius = 8.0f;
         p.color = particleColor;
         p.density = den;
         p.nearDensity = n_den;
@@ -66,7 +68,7 @@ void InitializeParticles(int count, Color particleColor) {
         particles.push_back(p);
     }
 
-    //Init grid with width and height based on particle smoothing radius and current screen size.
+    // Init grid with width and height based on particle smoothing radius and current screen size.
     gridWidth = (int)ceil(GetScreenWidth() / cellSize);
     gridHeight = (int)ceil(GetScreenHeight() / cellSize);
     grid = std::vector<std::vector<std::vector<Particle*>>>(gridWidth, std::vector<std::vector<Particle*>>(gridHeight));
@@ -86,6 +88,34 @@ void AssignParticlesToGrid() {
             grid[cellX][cellY].push_back(&particle);
         }
     }
+}
+
+float KernelPoly6(float r, float h) {
+    float result = 0.0f;
+    if (r >= 0 && r <= h) {
+        float x = (h * h) - (r * r);
+        result = (315.0f / (64.0f * PI * pow(h, 9))) * pow(x, 3);
+    }
+    return result;
+}
+
+Vector2 KernelPoly6Grad(Vector2 r, float h) {
+    Vector2 result = {0, 0};
+    float r_len = Vector2Length(r);
+    if (r_len >= 0 && r_len <= h) {
+        float x = (h * h) - (r_len * r_len);
+        result = Vector2Scale(r, (-945.0f / (32.0f * PI * pow(h, 9))) * x * x);
+    }
+    return result;
+}
+
+float KernelPoly6Laplacian(float r, float h) {
+    float result = 0.0f;
+    if (r >= 0 && r <= h) {
+        float x = (h * h) - (r * r);
+        result = (945.0f / (32.0f * PI * pow(h, 9))) * (x * (3 * (h * h) - 7 * (r * r)));
+    }
+    return result;
 }
 
 void ApplyForce(Particle& p, Vector2 force) {
@@ -116,7 +146,6 @@ void VerletIntegration(Particle& p, float deltaTime) {
 }
 
 void ResolveCollision(Particle& p1, Particle& p2) {
-
     Vector2 delta = Vector2Subtract(p1.position, p2.position);
     float distance = Vector2Length(delta);
     float minDistance = p1.radius + p2.radius;
@@ -152,8 +181,7 @@ void ResolveGridCollisions() {
                 for (Particle* p2 : grid[x][y]) {
                     if (&p1 != p2) {
                         ResolveCollision(p1, *p2);
-                    }
-                }
+                    } }
             }
         }
     });
@@ -173,13 +201,96 @@ void ConstrainToBounds(Particle& p, int screenWidth, int screenHeight) {
     }
 }
 
-void UpdateVerletParticles(float deltaTime) {
+void CalcColorFGrad() {
+    // Calculate the color field c_S
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        Particle& particle = particles[i];
+        particle.colorField = 0.0f;
 
+        int cellX = (int)(particle.position.x / cellSize);
+        int cellY = (int)(particle.position.y / cellSize);
+
+        for (int x = std::max(0, cellX - 1); x <= std::min(gridWidth - 1, cellX + 1); ++x) {
+            for (int y = std::max(0, cellY - 1); y <= std::min(gridHeight - 1, cellY + 1); ++y) {
+                for (Particle* neighbor : grid[x][y]) {
+                    Vector2 delta = Vector2Subtract(neighbor->position, particle.position);
+                    float r = Vector2Length(delta);
+                    if (r < h) {
+                        float W = KernelPoly6(r, h);
+                        particle.colorField += (1.0f / neighbor->density) * W;
+                    }
+                }
+            }
+        }
+    });
+
+    // Calculate the gradient of the color field
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        Particle& particle = particles[i];
+        particle.gradient = {0, 0};
+
+        int cellX = (int)(particle.position.x / cellSize);
+        int cellY = (int)(particle.position.y / cellSize);
+
+        for (int x = std::max(0, cellX - 1); x <= std::min(gridWidth - 1, cellX + 1); ++x) {
+            for (int y = std::max(0, cellY - 1); y <= std::min(gridHeight - 1, cellY + 1); ++y) {
+                for (Particle* neighbor : grid[x][y]) {
+                    Vector2 delta = Vector2Subtract(neighbor->position, particle.position);
+                    float r = Vector2Length(delta);
+                    if (r < h) {
+                        float W = KernelPoly6(r, h);
+                        Vector2 gradW = KernelPoly6Grad(delta, h);
+                        particle.gradient = Vector2Add(particle.gradient, Vector2Scale(gradW, 1.0f / neighbor->density));
+                    }
+                }
+            }
+        }
+    });
+}
+
+void CalculateCurvature() {
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        Particle& particle = particles[i];
+        particle.curvature = 0.0f;
+
+        int cellX = (int)(particle.position.x / cellSize);
+        int cellY = (int)(particle.position.y / cellSize);
+
+        for (int x = std::max(0, cellX - 1); x <= std::min(gridWidth - 1, cellX + 1); ++x) {
+            for (int y = std::max(0, cellY - 1); y <= std::min(gridHeight - 1, cellY + 1); ++y) {
+                for (Particle* neighbor : grid[x][y]) {
+                    Vector2 delta = Vector2Subtract(neighbor->position, particle.position);
+                    float r = Vector2Length(delta);
+                    if (r < h) {
+                        float W = KernelPoly6(r, h);
+                        float laplacianW = KernelPoly6Laplacian(r, h);
+                        particle.curvature += (1.0f / neighbor->density) * laplacianW;
+                    }
+                }
+            }
+        }
+
+        particle.curvature = -particle.curvature / Vector2Length(particle.gradient);
+    });
+}
+
+void ApplySurfaceTension(float deltaTime) {
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        Particle& particle = particles[i];
+        if (Vector2Length(particle.gradient) > 1e-5f) {  // Threshold to avoid division by zero
+            Vector2 normal = Vector2Scale(particle.gradient, 1.0f / Vector2Length(particle.gradient));
+            Vector2 surfaceTensionForce = Vector2Scale(normal, -sigma * particle.curvature);
+            ApplyForce(particle, surfaceTensionForce);
+        }
+    });
+}
+
+void UpdateVerletParticles(float deltaTime) {
     int screenWidth = GetScreenWidth();
     int screenHeight = GetScreenHeight();
 
     ParallelFor(0, particles.size(), [&](size_t i) {
-        ApplyForce(particles[i], { 0, gravity }); 
+        ApplyForce(particles[i], { 0, gravity });
         VerletIntegration(particles[i], deltaTime);
         ConstrainToBounds(particles[i], screenWidth, screenHeight);
     });
@@ -189,12 +300,11 @@ void UpdateVerletParticles(float deltaTime) {
 }
 
 void UpdateSPHParticles(float deltaTime) {
-    
     int screenWidth = GetScreenWidth();
     int screenHeight = GetScreenHeight();
 
     ParallelFor(0, particles.size(), [&](size_t i) {
-        ApplyForce(particles[i], { 0, gravity }); // Gravity
+        ApplyForce(particles[i], { 0, gravity });
         VerletIntegration(particles[i], deltaTime);
 
         float speed = Vector2Length(particles[i].velocity);
@@ -202,13 +312,14 @@ void UpdateSPHParticles(float deltaTime) {
             maxVelocity = speed;
         }
         particles[i].color = VelocityToColor(particles[i].velocity, maxVelocity);
-        
         ConstrainToBounds(particles[i], screenWidth, screenHeight);
     });
 
     AssignParticlesToGrid();
     DoubleDensityRelaxation(deltaTime);
-
+    CalcColorFGrad();
+    CalculateCurvature();
+    ApplySurfaceTension(deltaTime);
 }
 
 void DoubleDensityRelaxation(float deltaTime) {
@@ -260,9 +371,9 @@ void DoubleDensityRelaxation(float deltaTime) {
 void DrawParticles(Color* color) {
     for (const auto& particle : particles) {
         if (currentMode == FLUID){
-        DrawCircleV(particle.position, particle.radius, particle.color);
+            DrawCircleV(particle.position, particle.radius, particle.color);
         } else if (currentMode == VERLET){
-        DrawCircleV(particle.position, particle.radius, *color);
+            DrawCircleV(particle.position, particle.radius, *color);
         } 
     }
 }
