@@ -7,8 +7,8 @@
 // custom includes here
 #include "physics.hpp"
 
-#define WIDTH 800
-#define HEIGHT 600
+#define WIDTH 1280
+#define HEIGHT 720
 
 Color color = RAYWHITE;
 Color bgColor = BLACK;
@@ -117,6 +117,7 @@ int main() {
 
             // Fluid parameters
             if (currentMode == FLUID) {
+                ImGui::SliderFloat("Damping", &damping, 0.000f, 1.000f);
                 ImGui::SliderFloat("Density", &den, 1.0f, 100.0f);
                 ImGui::SliderFloat("Near Density", &n_den, 1.0f, 100.0f);
                 ImGui::SliderFloat("Pressure Multiplier", &k, -1.0f, 1.0f);
