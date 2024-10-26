@@ -1,6 +1,7 @@
 #include "rlImGui.h"
 #include "imgui.h"
 #include "raylib.h"
+#include "raymath.h"
 #include <cstdlib>
 #include <stdio.h>
 
@@ -21,7 +22,7 @@ enum MouseAction {
 };
 
 MouseAction currentAction = NONE;
-SimulationMode currentMode = FLUID;
+SimulationMode currentMode = VERLET;
 float particleRadius = 5.0f;
 float pushForce = 100.0f;
 float pickRadius = 100.0f;
@@ -45,10 +46,11 @@ Color FloatArrayToColor(const float* floatArray) {
     return color;
 }
 
+
 int main() {
     InitWindow(WIDTH, HEIGHT, "Verlet Integration");
 
-    InitializeParticles(10000, color);
+    InitializeParticles(2000, color);
 
     rlImGuiSetup(true); // init raylib imgui with darkmode
 
@@ -57,13 +59,12 @@ int main() {
     float bgColorArray[3];
     float colorArray[3];
 
-    while (!WindowShouldClose()) {
-        float deltaTime = GetFrameTime();
+    while (!WindowShouldClose()) { 
 
         if (currentMode == VERLET) {
-            UpdateVerletParticles(deltaTime);
+            UpdateVerletParticles(0.08f);
         } else if (currentMode == FLUID) {
-            UpdateSPHParticles(deltaTime);
+            UpdateSPHParticles(0.07f);
         }
 
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
@@ -117,7 +118,6 @@ int main() {
 
             // Fluid parameters
             if (currentMode == FLUID) {
-                ImGui::SliderFloat("Damping", &damping, 0.000f, 1.000f);
                 ImGui::SliderFloat("Density", &den, 1.0f, 100.0f);
                 ImGui::SliderFloat("Near Density", &n_den, 1.0f, 100.0f);
                 ImGui::SliderFloat("Pressure Multiplier", &k, -1.0f, 1.0f);
