@@ -3,7 +3,7 @@
 https://github.com/user-attachments/assets/79ef912e-795c-4a98-9af6-fd9f9d03a894
 
 
-# Verlet Particles
+# Physics Based Particle Solver
 
 ## Prerequisites
 
