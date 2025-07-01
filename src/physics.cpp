@@ -1,7 +1,6 @@
 #include "physics.hpp"
 #include "raylib.h"
 #include "raymath.h"
-
 #include <cstddef>
 #include <thread>
 #include <algorithm>
@@ -10,35 +9,32 @@
 
 std::vector<Particle> particles;
 
-float den           = 1.0f;      // Density
-float n_den         = 35.0f;     // Near Density
-float pres          = 2000.0f;   // Pressure
-float n_pres        = 1.0f;      // Near Pressure
-float k             = -1.0f;    // Stiffness parameter
-float kNear         = 0.5f;      // Near pressure stiffness parameter
-float rho0          = 300.0f;    // Rest density
-float h             = 32.0f;     // Interaction radius || Smoothing radius
-float gravity       = 98.1f;     
-float damping       = 0.999f;    // Damping factor for Verlet collisions
-float hsq           = h * h;
-
-
-// Smoothing Kernels by Muller adapted by Solenthaler et al.
-const static float POLY6 = 4.0f / (PI * pow(h, 8.0f));
-const static float SPIKY_GRAD = -10.0f / (PI * pow(h, 5.0f));
-const static float VISC_LAP = 40.0f / (PI * pow(h, 5.0f));
-
-const static float MASS = 2.5f;
-const static float GAS_CONST = 2000.0f;
-const static float VISC = 200.f;	   // viscosity constant
-const static Vector2 G {0.f, 10.0f};
-
-// simulation parameters
-const static float EPS = h; // boundary epsilon
+// Simulation parameters
+float den = 1.0f;              // Density
+float n_den = 35.0f;           // Near Density
+float pres = 2000.0f;          // Pressure
+float n_pres = 1.0f;           // Near Pressure
+float k = -0.5f;               // Stiffness parameter
+float kNear = 0.5f;            // Near pressure stiffness parameter
+float rho0 = 500.0f;           // Rest density
+float h = 32.0f;               // Interaction radius || Smoothing radius
+float gravity = 98.1f;         
+float damping = 0.999f;        // Damping factor for Verlet collisions
+float hsq = h * h;
+const static float EPS = h;    // Boundary epsilon
 const static float BOUND_DAMPING = -1.0f;
 
-float maxVelocity   = 1.0f;
-float sigma         = 0.0728f;   // Surface tension coefficient for water-air interface 
+// Elasticity and plasticity parameters
+float kSpring = 0.3f;          // Spring constant for elasticity
+float plasticityAlpha = 0.3f;  // Plasticity rate constant
+float yieldRatio = 0.2f;       // Yield ratio for plastic deformation threshold
+
+// Viscosity parameters
+float sigma = 0.5f;            // Linear viscosity coefficient
+float beta = 0.5f;             // Quadratic viscosity coefficient
+
+float maxVelocity = 1.0f;
+float sigmaSurface = 0.0728f;  // Surface tension coefficient for water-air interface
 
 // Parameters for grid traversal
 float cellSize = h;
@@ -46,20 +42,33 @@ int gridWidth;
 int gridHeight;
 std::vector<std::vector<std::vector<Particle*>>> grid;
 
-// Helper function to split workloads. Multithreading for the update functions and physics calculations.
+// Structure to hold spring-related data
+struct Spring {
+    int particleA;
+    int particleB;
+    float restLength;
+
+    bool operator==(const Spring& other) const {
+        return (particleA == other.particleA && particleB == other.particleB && restLength == other.restLength);
+    }
+};
+
+std::vector<Spring> springs;
+
+// Multithreading helper function
 template <typename F>
-void ParallelFor(size_t start, size_t end, F&& func){
+void ParallelFor(size_t start, size_t end, F&& func) {
     size_t numThreads = std::thread::hardware_concurrency();
-    size_t blockSize = (end - start + numThreads - 1) / numThreads; // Ceiling division.
+    size_t blockSize = (end - start + numThreads - 1) / numThreads;
     std::vector<std::thread> threads(numThreads);
-    
-    for (size_t t = 0; t < numThreads; ++t){
+
+    for (size_t t = 0; t < numThreads; ++t) {
         size_t blockStart = start + t * blockSize;
         size_t blockEnd = std::min(blockStart + blockSize, end);
         threads[t] = std::thread([=, &func]() {
-            for (size_t i = blockStart; i < blockEnd; i++){
+            for (size_t i = blockStart; i < blockEnd; i++) {
                 func(i);
-            }    
+            }
         });
     }
 
@@ -84,15 +93,72 @@ void InitializeParticles(int count, Color particleColor) {
         particles.push_back(p);
     }
 
-    // Init grid with width and height based on particle data and current screen size.
     gridWidth = (int)ceil(GetScreenWidth() / cellSize);
     gridHeight = (int)ceil(GetScreenHeight() / cellSize);
     grid = std::vector<std::vector<std::vector<Particle*>>>(gridWidth, std::vector<std::vector<Particle*>>(gridHeight));
 }
 
+void AdjustSprings() {
+    for (auto& spring : springs) {
+        Particle& pa = particles[spring.particleA];
+        Particle& pb = particles[spring.particleB];
+
+        float currentLength = Vector2Length(Vector2Subtract(pa.position, pb.position));
+        float deltaLength = currentLength - spring.restLength;
+
+        // Update spring rest length based on plastic deformation
+        if (std::fabs(deltaLength) > yieldRatio * spring.restLength) {
+            spring.restLength += plasticityAlpha * deltaLength;
+        }
+
+        if (spring.restLength > h) {
+            springs.erase(std::remove(springs.begin(), springs.end(), spring), springs.end());
+        }
+    }
+}
+
+void ApplySpringDisplacements(float deltaTime) {
+    for (const auto& spring : springs) {
+        Particle& pa = particles[spring.particleA];
+        Particle& pb = particles[spring.particleB];
+
+        float currentLength = Vector2Length(Vector2Subtract(pa.position, pb.position));
+        Vector2 direction = Vector2Normalize(Vector2Subtract(pb.position, pa.position));
+        float displacementMagnitude = deltaTime * deltaTime * kSpring * (1.0f - spring.restLength / h) * (spring.restLength - currentLength);
+
+        Vector2 displacement = Vector2Scale(direction, displacementMagnitude);
+        pa.position = Vector2Subtract(pa.position, Vector2Scale(displacement, 0.5f));
+        pb.position = Vector2Add(pb.position, Vector2Scale(displacement, 0.5f));
+    }
+}
+
+void ApplyViscosity(float deltaTime) {
+    for (size_t i = 0; i < particles.size(); ++i) {
+        for (size_t j = i + 1; j < particles.size(); ++j) {
+            Particle& pi = particles[i];
+            Particle& pj = particles[j];
+
+            float distance = Vector2Length(Vector2Subtract(pi.position, pj.position));
+            if (distance < h) {
+                Vector2 direction = Vector2Normalize(Vector2Subtract(pj.position, pi.position));
+                float radialVelocity = Vector2DotProduct(Vector2Subtract(pj.velocity, pi.velocity), direction);
+
+                if (radialVelocity > 0) {
+                    float q = distance / h;
+                    float impulseMagnitude = deltaTime * (1 - q) * (sigma * radialVelocity + beta * radialVelocity * radialVelocity);
+
+                    Vector2 impulse = Vector2Scale(direction, impulseMagnitude);
+                    pi.velocity = Vector2Subtract(pi.velocity, Vector2Scale(impulse, 0.5f));
+                    pj.velocity = Vector2Add(pj.velocity, Vector2Scale(impulse, 0.5f));
+                }
+            }
+        }
+    }
+}
+
 void AssignParticlesToGrid() {
     for (auto& row : grid) {
-        for (auto& cell : row){
+        for (auto& cell : row) {
             cell.clear();
         }
     }
@@ -130,14 +196,6 @@ void VerletIntegration(Particle& p, float deltaTime) {
     p.position = Vector2Add(p.position, Vector2Add(p.velocity, Vector2Scale(Vector2Scale(p.acceleration, 0.5f), (deltaTime * deltaTime))));
     p.oldPosition = temp;
     p.acceleration = { 0, 0 };
-}
-
-void FluidIntegration(float deltaTime) {
-    // Forward Euler Integration.
-    for (auto& p : particles){
-        p.velocity = Vector2Add(p.velocity, Vector2Scale(p.force, deltaTime / p.density));
-        p.position = Vector2Add(p.position, Vector2Scale(p.velocity, deltaTime));
-    }
 }
 
 void ResolveCollision(Particle& p1, Particle& p2) {
@@ -221,60 +279,7 @@ void FluidBounds(Particle& p, int screenWidth, int screenHeight) {
     }
 }
 
-void UpdateVerletParticles(float deltaTime) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-
-    ParallelFor(0, particles.size(), [&](size_t i) {
-        ApplyForce(particles[i], { 0, gravity });
-        VerletIntegration(particles[i], deltaTime);
-        ConstrainToBounds(particles[i], screenWidth, screenHeight);
-    });
-
-    AssignParticlesToGrid();
-    ResolveGridCollisions();
-}
-/*
-void UpdateSPHParticles(float deltaTime) {
-        int screenWidth = GetScreenWidth();
-        int screenHeight = GetScreenHeight();
-
-        
-        ComputeDensityPressure();
-        
-        ComputeForces();
-
-        FluidIntegration(deltaTime);
-
-        ParallelFor(0, particles.size(), [&](size_t i) {
-        FluidBounds(particles[i], screenWidth, screenHeight);
-    });
-}
-*/
-
-
- // Original Function For fluid update.
-void UpdateSPHParticles(float deltaTime) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-
-     DoubleDensityRelaxation(deltaTime); 
-
-        ParallelFor(0, particles.size(), [&](size_t i) {
-
-        ApplyForce(particles[i], { 0, gravity });
-        VerletIntegration(particles[i], deltaTime); 
-        float speed = Vector2Length(particles[i].velocity);
-        if (speed > maxVelocity) {
-            maxVelocity = speed;
-        }
-        particles[i].color = VelocityToColor(particles[i].velocity, maxVelocity);
-        FluidBounds(particles[i], screenWidth, screenHeight);
-    });
-    
-}
-
-void DoubleDensityRelaxation(float deltaTime) {
+ void DoubleDensityRelaxation(float deltaTime) {
     ParallelFor(0, particles.size(), [&](size_t i) {
         Particle& pi = particles[i];
         pi.density = 0.0f;
@@ -307,24 +312,6 @@ void DoubleDensityRelaxation(float deltaTime) {
             }
         }
 
-        // Handle boundary contributions to density and near-density
-        float closestX = std::min(pi.position.x, static_cast<float>(GetScreenWidth()) - pi.position.x);
-        float closestY = std::min(pi.position.y, static_cast<float>(GetScreenHeight()) - pi.position.y);
-
-        if (closestX < h) {
-            float q = closestX / h;
-            float closeness = 1 - q;
-            pi.density += closeness * closeness;
-            pi.nearDensity += closeness * closeness * closeness;
-        }
-
-        if (closestY < h) {
-            float q = closestY / h;
-            float closeness = 1 - q;
-            pi.density += closeness * closeness;
-            pi.nearDensity += closeness * closeness * closeness;
-        }
-
         // Compute pressure and near-pressure
         float pressure = k * (pi.density - rho0);
         float nearPressure = kNear * pi.nearDensity;
@@ -339,9 +326,8 @@ void DoubleDensityRelaxation(float deltaTime) {
             float closeness = neighborCloseness[n];
             Vector2 direction = neighborDirection[n];
 
-            // Compute displacement contribution based on both pressure and near-pressure
-            Vector2 displacementContribution = Vector2Scale(direction, 
-                (deltaTime * deltaTime) * 
+            Vector2 displacementContribution = Vector2Scale(direction,
+                (deltaTime * deltaTime) *
                 (pressure * closeness + nearPressure * closeness * closeness));
 
             // Apply action-reaction
@@ -354,65 +340,40 @@ void DoubleDensityRelaxation(float deltaTime) {
     });
 }
 
-// New Density Function
-void ComputeDensityPressure() {
-    for (auto& pi : particles){
-        pi.density = 0.0f;
-        for (auto& pj : particles){
-            Vector2 rij = Vector2Subtract(pj.position, pi.position);
-            // Compute squared norm (squared length) of the vector rij
-            float r2 = Vector2LengthSqr(rij);
+void UpdateSPHParticles(float deltaTime) {
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
 
-            if (r2 < hsq) {
-                pi.density += MASS * POLY6 * pow(hsq - r2, 3.0f);
-            }
+    ApplyViscosity(deltaTime);
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        ApplyForce(particles[i], { 0, gravity });
+        VerletIntegration(particles[i], deltaTime);
+
+        float speed = Vector2Length(particles[i].velocity);
+        if (speed > maxVelocity) {
+            maxVelocity = speed;
         }
-        pi.pressure = GAS_CONST * (pi.density - rho0);
-    } 
+        particles[i].color = VelocityToColor(particles[i].velocity, maxVelocity);
+        FluidBounds(particles[i], screenWidth, screenHeight);
+    });
+
+    AdjustSprings();
+    ApplySpringDisplacements(deltaTime);
+    DoubleDensityRelaxation(deltaTime);
 }
 
-void ComputeForces()
-{
-	for (auto &pi : particles)
-	{
-		Vector2 fpress{0.f, 0.f};
-		Vector2 fvisc{0.f, 0.f};
-		for (auto &pj : particles)
-		{
-			if (&pi == &pj)
-			{
-				continue;
-			}
+void UpdateVerletParticles(float deltaTime) {
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
 
-			Vector2 rij = Vector2Subtract(pj.position, pi.position); 
-			float r = Vector2Length(rij);
+    ParallelFor(0, particles.size(), [&](size_t i) {
+        ApplyForce(particles[i], { 0, gravity });
+        VerletIntegration(particles[i], deltaTime);
+        ConstrainToBounds(particles[i], screenWidth, screenHeight);
+    });
 
-			if (r < h)
-			{
-			    // Calculate normalized direction (rij.normalized())
-                            Vector2 rij_normalized = Vector2Normalize(Vector2Negate(rij));
-
-                            // Compute pressure force contribution
-                            Vector2 pressure_contribution = Vector2Scale(rij_normalized, 
-                            MASS * (pi.pressure + pj.pressure) / (2.f * pj.density) * SPIKY_GRAD * pow(h - r, 3.f));
-    
-                            fpress = Vector2Add(fpress, pressure_contribution);
-
-                            // Compute viscosity force contribution
-                            Vector2 velocity_diff = Vector2Subtract(pj.velocity, pi.velocity);
-                            Vector2 viscosity_contribution = Vector2Scale(velocity_diff, 
-                            VISC * MASS / pj.density * VISC_LAP * (h - r));
-    
-                            fvisc = Vector2Add(fvisc, viscosity_contribution);
-                        }
-		}
-
-	    // Compute gravitational force as a vector (since G is a Vector2)
-            Vector2 fgrav = Vector2Scale(G, MASS / pi.density);
-
-            // Sum up the forces (pressure, viscosity, and gravity) to get the acceleration
-            pi.force = Vector2Add(Vector2Add(fpress, fvisc), fgrav);
-    }
+    AssignParticlesToGrid();
+    ResolveGridCollisions();
 }
 
 void DrawParticles(Color* color) {
